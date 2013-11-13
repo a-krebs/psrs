@@ -1,5 +1,5 @@
 OUT=		psrs
-OBJS=		main.o args.o
+OBJS=		main.o args.o phases.o
 #TESTOBJS=	test.o $(SHAREDOBJS)
 
 CFLAGS+=	-Wall
@@ -25,6 +25,9 @@ main.o: main.c
 	$(COMPILE)
 
 args.o: args.c args.h
+	$(COMPILE)
+
+phases.o: phases.c phases.h
 	$(COMPILE)
 
 #test: $(TESTOBJS)
