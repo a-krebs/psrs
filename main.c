@@ -39,7 +39,7 @@ int main(int argc, char **argv)
 	memset((void*)&times, 0, sizeof(struct timing));
 
 	/* run PSRS */
-	if (run(&times, rank, size) != 0) {
+	if (run(&times, &args, rank, size) != 0) {
 		MPI_Finalize();
 		exit(EXIT_FAILURE);
 	}
@@ -52,15 +52,18 @@ int main(int argc, char **argv)
 	 */
 	memset((void*)hname, 0, 256);
 	gethostname(hname, 255);
-	printf("%d, %d, %s, %d, %d, %f, %f, %f, %f, %f, %f\n",
-	    rank, size, hname, args.nElem, args.seed,
-	    times.tPhase1E - times.tPhase1S,
-	    times.tPhase2E - times.tPhase2S,
-	    times.tPhase3E - times.tPhase3S,
-	    times.tPhase4E - times.tPhase4S,
-	    times.tPhase5E - times.tPhase5S,
-	    times.tEnd - times.tStart);
-
+	/*
+	MASTER {
+		printf("%d, %d, %s, %d, %d, %f, %f, %f, %f, %f, %f\n",
+		    rank, size, hname, args.nElem, args.seed,
+		    times.tPhase1E - times.tPhase1S,
+		    times.tPhase2E - times.tPhase2S,
+		    times.tPhase3E - times.tPhase3S,
+		    times.tPhase4E - times.tPhase4S,
+		    times.tPhase5E - times.tPhase5S,
+		    times.tEnd - times.tStart);
+	}
+	*/
 
 	/* clean up and exit */
 	MPI_Finalize();
