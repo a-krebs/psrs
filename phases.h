@@ -26,3 +26,5 @@ struct timing {
 int run(struct timing*, struct arguments*, int, int);
 int *gen_rand_list(int, int);
 void scatter(int*, int*, int);
+void phase_1(int*, int*, int, int*, int);
+int compare(const void*, const void*);
