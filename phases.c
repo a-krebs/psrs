@@ -20,7 +20,7 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	int *local = NULL;
 	int *samples = NULL;
 	int localCount = args->nElem / size;
-	int numSamples = args->nElem / (size * size);
+	int interval = args->nElem / (size * size);
 
 	/* start timer */
 	MASTER {
@@ -29,7 +29,8 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 
 	/* initialize local buffers */
 	local = calloc(localCount, sizeof(int));
-	samples = calloc(numSamples, sizeof(int));
+	/* each processor takes p samples */
+	samples = calloc(size, sizeof(int));
 
 	/* generate list of integers */
 	MASTER {
@@ -38,8 +39,18 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 
 	/* Phase 1: partition and sort local data */
 	MASTER { times->tPhase1S = MPI_Wtime(); }
-	phase_1(data, local, localCount, samples, numSamples);
+	phase_1(data, local, localCount, samples, interval);
 	MASTER { times->tPhase1E = MPI_Wtime(); }
+
+	int i;
+	for (i = 0; i < localCount; i++) {
+		printf("%d, ", local[i]);
+	}
+	printf("\n");
+	for (i = 0; i < size; i++) {
+		printf("%d, ", samples[i]);
+	}
+	printf("\n");
 
 	/* Phase 2: find pivots then partition */
 	/* Phase 3: exchange partitions */
@@ -105,7 +116,7 @@ void scatter(int *data, int *local, int count) {
  * Each processor takes regular samples of their sorted local data.
  */
 void phase_1(
-    int *data, int *local, int localCount, int *samples, int numSamples) {
+    int *data, int *local, int localCount, int *samples, int interval) {
 	/* split data into p partitions and scatter to other pocesses */
 	scatter(data, local, localCount);
 
@@ -115,8 +126,8 @@ void phase_1(
 
 	/* take samples */
 	int i;
-	for (i = 0; i < numSamples; i++) {
-		samples[i] = local[i*numSamples + 1];
+	for (i = 0; i < localCount; i += interval) {
+		samples[i/interval] = local[i];
 	}
 
 	return;
