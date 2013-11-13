@@ -4,6 +4,8 @@
  * Aaron Krebs <akrebs@ualberta.ca>
  */
 
+#include "args.h"	/* for struct arguments */
+
 /* struct for timing values */
 struct timing {
 	double tStart;
@@ -21,5 +23,6 @@ struct timing {
 	double tEnd;
 };
 
-int run(struct timing*, int, int);
-int *gen_rand_list(int);
+int run(struct timing*, struct arguments*, int, int);
+int *gen_rand_list(int, int);
+void scatter(int*, int*, int);
