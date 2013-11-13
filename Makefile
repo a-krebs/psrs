@@ -37,5 +37,5 @@ clean:
 	-rm -f *.o $(OUT)
 
 # useful utility rules
-run4: $(OUT)
+run4: all
 	$(MPIEXEC) -np 4 ./psrs -n 1000
