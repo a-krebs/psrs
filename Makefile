@@ -38,4 +38,4 @@ clean:
 
 # useful utility rules
 run4: all
-	@$(MPIEXEC) -np 4 ./psrs -n 100
+	@$(MPIEXEC) -np 3 ./psrs -n 36
