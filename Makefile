@@ -34,7 +34,7 @@ phases.o: phases.c phases.h
 #	$(CC) -o test $(TESTOBJS) 
 
 clean:
-	-rm -f *.o $(OUT)
+	-rm -f core *.o $(OUT)
 
 # useful utility rules
 run4: all
