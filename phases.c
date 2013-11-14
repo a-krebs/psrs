@@ -17,11 +17,12 @@
  * Run the PSRS algorithm with timings.
  */
 int run(struct timing *times, struct arguments *args, int rank, int size) {
-
+	int i;
 	intArray *data = NULL;
 	intArray *local = NULL;
 	intArray *samples = NULL;
 	intArray *pivots = NULL;
+	intArray **partitions = NULL;
 
 	int localCount = args->nElem / size;
 	int interval = args->nElem / (size * size);
@@ -54,21 +55,24 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 		data->arr = gen_rand_list(data->size, args->seed);
 	}
 
+	partitions = calloc(size, sizeof(intArray *));
+	
 	/* Phase 1: partition and sort local data */
 	MASTER { times->tPhase1S = MPI_Wtime(); }
 	phase_1(data, local, samples, interval);
 	MASTER { times->tPhase1E = MPI_Wtime(); }
 
-	int i;
-	printf("locals: ");
+#if DEBUG
+	printf("%d locals: ", rank);
 	for (i = 0; i < local->size; i++) {
 		printf("%d, ", local->arr[i]);
 	}
 	printf("\n");
+#endif
 
 	/* Phase 2: find pivots then partition */
 	MASTER { times->tPhase2S = MPI_Wtime(); }
-	phase_2(rank, size, samples, pivots, local);
+	phase_2(rank, size, samples, pivots, local, partitions);
 	MASTER { times->tPhase2E = MPI_Wtime(); }
 
 	/* Phase 3: exchange partitions */
@@ -90,6 +94,11 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	free(samples);
 	free(pivots->arr);
 	free(pivots);
+	for (i = 0; i < size; i++) {
+		free(partitions[i]->arr);
+		free(partitions[i]);
+	}
+	free(partitions);
 
 	return 0;
 }
@@ -166,126 +175,154 @@ void phase_1(intArray *data, intArray *local, intArray *samples, int interval) {
  * Each processor receives a copy of the pivots
  * Each processor makes p partitions from their local data
  */
-void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *local) {
+void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *local, intArray **partitions) {
 	intArray *gatheredSamples = NULL;
-	intArray **partitions = NULL;
-	
-	//int foo = 0;
-	//MASTER { while (foo==0) sleep(1); }
+	/* loop variables */
+	int i = 0;
+	int j = 0;
+	int m = 0;
 	
 	/* implicit floor because these are integers */
 	int k = size / 2;
 
 	/* only MASTER needs to collect all samples */
 	gatheredSamples = calloc(1, sizeof(intArray));
-	if (gatheredSamples == NULL) {
-		printf("ERROR\n");
-	}
-	gatheredSamples->size = size * size;
-	gatheredSamples->arr = calloc(gatheredSamples->size, sizeof(int));
-	if (gatheredSamples->arr == NULL) {
-		printf("ERROR\n");
+	MASTER {
+		gatheredSamples->size = size * size;
+		gatheredSamples->arr = calloc(gatheredSamples->size, sizeof(int));
 	}
 	
-	int i;
-	printf("samples: ");
+#if DEBUG
+	printf("%d samples: ", rank);
 	for (i = 0; i < samples->size; i++) {
 		printf("%d, ", samples->arr[i]);
 	}
 	printf("\n");
+#endif
 
 	/* gather samples on MASTER */
-	/*
 	MPI_Gather(
 	    (void*)(samples->arr),
 	    samples->size,
 	    MPI_INT,
 	    (void*)(gatheredSamples->arr),
-	    gatheredSamples->size,
+	    /* recvcount is size sent from a single process */
+	    samples->size,
 	    MPI_INT,
 	    0,
 	    MPI_COMM_WORLD);
-	    */
 
 	MASTER {
-		int i;
-		printf("Gathered samples: ");
+#if DEBUG
+		printf("%d gathered samples: ", rank);
 		for (i = 0; i < gatheredSamples->size; i++) {
 			printf("%d, ", gatheredSamples->arr[i]);
 		}
 		printf("\n");
-	}
-	free(gatheredSamples->arr);
-	free(gatheredSamples);
-
-
-
-
+#endif
 
 		/* sort samples */
 		// TODO check sorting alg
-		//qsort(gatheredSamples->arr, gatheredSamples->size, sizeof(int), &compare);
+		qsort(gatheredSamples->arr, gatheredSamples->size, sizeof(int), &compare);
 
 		/* select p-1 pivots */
-		/*for (i = 0; i < pivots->size; i++) {
-			pivots->arr[i] = gatheredSamples->arr[(i * size) + k];
-			printf("%d, ", pivots->arr[i]);
-		}
-		*/
-
-
-	/*	printf("%d pivots: ", rank);
 		for (i = 0; i < pivots->size; i++) {
-			printf("%d, ", pivots->arr[i]);
-		}*/
-		//printf("\n");
+			pivots->arr[i] = gatheredSamples->arr[((i+1) * size) + k];
+		}
 
-		/* done with gatheredSamples */
-		/* broadcast pivots */
-		/*MPI_Bcast(
-		    (void*)pivots->arr,
-		    pivots->size,
-		    MPI_INT,
-		    0,
-		    MPI_COMM_WORLD);
-		 */
-
-		/*printf("%d pivots: ", rank);
+#if DEBUG
+		printf("%d pivots before bcast: ", rank);
 		for (i = 0; i < pivots->size; i++) {
 			printf("%d, ", pivots->arr[i]);
 		}
 		printf("\n");
-		*/
-	
-	/* make paritions from local data */
-/*	int low = 0;
-	int high = 0;
-	partitions = calloc(size, sizeof(intArray *));
-	int j;
-	int m;
-	for (j = 0; j < size; j++) {
-		while (local->arr[high] < pivots->arr[j]) {
-			high++;
-		}
-		partitions[j] = calloc(1, sizeof(intArray));
-		partitions[j]->size = high - low;
-		partitions[j]->arr = calloc(partitions[j]->size, sizeof(int));
-		for (m = low; m < high; m++) {
-			partitions[j]->arr[m] = local->arr[m];
-		}
-		low = high + 1;
+#endif
 	}
-	printf("local paritions: ");
+
+	/* done with gatheredSamples */
+
+	free(gatheredSamples->arr);
+	free(gatheredSamples);
+	
+	/* broadcast pivots */
+	MPI_Bcast(
+	    (void*)pivots->arr,
+	    pivots->size,
+	    MPI_INT,
+	    0,
+	    MPI_COMM_WORLD);
+
+#if DEBUG
+	printf("%d pivots: ", rank);
+	for (i = 0; i < pivots->size; i++) {
+		printf("%d, ", pivots->arr[i]);
+	}
+	printf("\n");
+#endif
+
+	i = 0;
+	
+	int pivot = 0;
+	int index = 0;
+	int partitionSize = 0;
+
+	/* there are size-1 pivots for size number of partitions */
+	for (i = 0; i < pivots->size; i++) {
+		pivot = pivots->arr[i];
+
+		for (j = index; j < local->size; j++) {
+			if (local->arr[j] < pivot) {
+				partitionSize++;
+			} else {
+				break;
+			}
+		}
+
+		/* allocate for partition */
+		partitions[i] = calloc(1, sizeof(intArray));
+		partitions[i]->size = partitionSize;
+		partitions[i]->arr = calloc(partitions[i]->size, sizeof(int));
+
+		/* copy values to partition */
+		while (partitionSize > 0) {
+			partitions[i]->arr[partitionSize - 1] = local->arr[partitionSize + index - 1];
+			partitionSize--;
+		}
+
+		index = j;
+		/* skip pivots */
+		while (local->arr[index] == pivot) {
+			index++;
+		}
+	}
+
+#if DEBUG
+	printf("%d all pivot partitions but last done\n", rank);
+#endif
+
+	/* add remaining values to final parition */
+	/* using i from loop above */
+	partitions[i] = calloc(1, sizeof(intArray));
+	partitions[i]->size = local->size - index;
+	partitions[i]->arr = calloc(partitions[i]->size, sizeof(int));
+	for (j = index; j < local->size; j++) {
+		// add to final partition
+		partitions[i]->arr[j - index] = local->arr[j];
+	}
+
+#if DEBUG
+	printf("%d final pivot parition done\n", rank);
+
 	for (i = 0; i < size; i++) {
-		printf("parition for pivot %d: ", pivots->arr[i]);
+		printf("%d parition for pivot %d: ", rank, i);
 		for (j = 0; j < partitions[i]->size; j++) {
 			printf("%d, ", partitions[i]->arr[j]);
 		}
 		printf("\n");
 	}
-	*/
-
 	printf("DONE PHASE 2\n");
+#endif
+	return;
 }
 
 int compare(const void *x, const void *y) {
