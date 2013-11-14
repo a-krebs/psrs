@@ -76,6 +76,9 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	MASTER { times->tPhase2E = MPI_Wtime(); }
 
 	/* Phase 3: exchange partitions */
+	MASTER { times->tPhase3S = MPI_Wtime(); }
+	phase_3(rank, size, partitions);
+	MASTER { times->tPhase3E = MPI_Wtime(); }
 	/* Phase 4: merge partitions */
 
 	/* gather data */
@@ -323,6 +326,18 @@ void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *
 	printf("DONE PHASE 2\n");
 #endif
 	return;
+}
+
+/*
+ * Phase 3
+ *
+ * Each porcessor i keeps the ith partition and sends the jth partition to the
+ * jth processor
+ */
+void phase_3(int rank, int size, intArray **partitions) {
+	/* exchange sizes */
+	/* allocate memory for each parition */
+	/* exchange partitions */
 }
 
 int compare(const void *x, const void *y) {
