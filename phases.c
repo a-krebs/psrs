@@ -5,6 +5,7 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>	/* printf() */
 #include <unistd.h>	/* sleep() */
 #include "mpi.h"
 
@@ -16,9 +17,13 @@
  * Run the PSRS algorithm with timings.
  */
 int run(struct timing *times, struct arguments *args, int rank, int size) {
-	int *data = NULL;
-	int *local = NULL;
-	int *samples = NULL;
+
+	intArray *data = NULL;
+	intArray *local = NULL;
+	intArray *localSamples = NULL;
+	intArray *gatheredSamples = NULL;
+	intArray *pivots = NULL;
+
 	int localCount = args->nElem / size;
 	int interval = args->nElem / (size * size);
 
@@ -28,27 +33,45 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	}
 
 	/* initialize local buffers */
-	local = calloc(localCount, sizeof(int));
-	/* each processor takes p samples */
-	samples = calloc(size, sizeof(int));
+	local = calloc(1, sizeof(intArray));
+	local->size = localCount;
+	local->arr = calloc(local->size, sizeof(int));
+	localSamples = calloc(1, sizeof(intArray));
+	/* each processor takes p localSamples */
+	localSamples->size = size;
+	localSamples->arr = calloc(localSamples->size, sizeof(int));
+	pivots = calloc(1, sizeof(intArray));
+	/* select p-1 privots from samples */
+	pivots->size = size - 1;
+	pivots->arr = calloc(pivots->size, sizeof(int));
+	/* only MASTER needs to collect all samples */
+	MASTER {
+		gatheredSamples = calloc(1, sizeof(intArray));
+		gatheredSamples->size = size * size;
+		gatheredSamples->arr = calloc(
+		    gatheredSamples->size, sizeof(int));
+	}
 
 	/* generate list of integers */
+	/* all procs need access to data->arr even it is is NULL */
+	data = calloc(1, sizeof(intArray));
 	MASTER {
-		data = gen_rand_list(args->nElem, args->seed);
+		data->size = args->nElem;
+		data->arr = gen_rand_list(data->size, args->seed);
 	}
 
 	/* Phase 1: partition and sort local data */
 	MASTER { times->tPhase1S = MPI_Wtime(); }
-	phase_1(data, local, localCount, samples, interval);
+	phase_1(data, local, localSamples, interval);
 	MASTER { times->tPhase1E = MPI_Wtime(); }
 
 	int i;
-	for (i = 0; i < localCount; i++) {
-		printf("%d, ", local[i]);
+	for (i = 0; i < local->size; i++) {
+		printf("%d, ", local->arr[i]);
 	}
 	printf("\n");
-	for (i = 0; i < size; i++) {
-		printf("%d, ", samples[i]);
+	for (i = 0; i < localSamples->size; i++) {
+		printf("%d, ", localSamples->arr[i]);
 	}
 	printf("\n");
 
@@ -64,8 +87,18 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 		times->tEnd = MPI_Wtime();
 	}
 	
-	free(data);
+	MASTER {
+		free(data->arr);
+		free(data);
+		free(gatheredSamples->arr);
+		free(gatheredSamples);
+	}
+	free(local->arr);
 	free(local);
+	free(localSamples->arr);
+	free(localSamples);
+	free(pivots->arr);
+	free(pivots);
 
 	return 0;
 }
@@ -115,22 +148,33 @@ void scatter(int *data, int *local, int count) {
  * Each processor sorts their portion of the items using quicksort.
  * Each processor takes regular samples of their sorted local data.
  */
-void phase_1(
-    int *data, int *local, int localCount, int *samples, int interval) {
+void phase_1(intArray *data, intArray *local, intArray *samples, int interval) {
 	/* split data into p partitions and scatter to other pocesses */
-	scatter(data, local, localCount);
+	scatter(data->arr, local->arr, local->size);
 
 	/* sort local data */
 	// TODO make sure we're actually using quicksort
-	qsort(local, localCount, sizeof(int), &compare);
+	qsort(local->arr, local->size, sizeof(int), &compare);
 
 	/* take samples */
 	int i;
-	for (i = 0; i < localCount; i += interval) {
-		samples[i/interval] = local[i];
+	for (i = 0; i < local->size; i += interval) {
+		samples->arr[i/interval] = local->arr[i];
 	}
 
 	return;
+}
+
+/*
+ * Phase 2
+ *
+ * MASTER processor gathers and sorts the regular samples.
+ * p-1 pivots are selected from the regular samples at indeces
+ *     p+p, 2p+p, 3p+p, ... , (p-1)+p
+ * Each processor receives a copy of the pivots
+ * Each processor makes p partitions from their local data
+ */
+void phase_2(int rank, intArray *samples, intArray *pivots, intArray *local) {
 }
 
 int compare(const void *x, const void *y) {
