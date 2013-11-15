@@ -18,16 +18,20 @@
  * Run the PSRS algorithm with timings.
  */
 int run(struct timing *times, struct arguments *args, int rank, int size) {
+	/* loop variables */
 	int i;
+	/* complete random dataset, only filled on MASTER */
 	intArray *data = NULL;
+	/* local data, samples, pivots*/
 	intArray *local = NULL;
 	intArray *samples = NULL;
 	intArray *pivots = NULL;
+	/* partitions and final sorted list */
 	intArray **partitions = NULL;
 	intArray *partitionsHead = NULL;
 	intArray *finalList = NULL;
 
-	int localCount = args->nElem / size;
+	/* what is the interval at which to take samples? */
 	int interval = args->nElem / (size * size);
 
 	/* start timer */
@@ -37,19 +41,20 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 
 	/* initialize local buffers */
 	local = calloc(1, sizeof(intArray));
-	local->size = localCount;
+	local->size = args->nElem / size;
 	local->arr = calloc(local->size, sizeof(int));
-	
 	samples = calloc(1, sizeof(intArray));
 	/* each processor takes p samples */
 	samples->size = size;
 	samples->arr = calloc(samples->size, sizeof(int));
-	
 	pivots = calloc(1, sizeof(intArray));
 	/* select p-1 privots from samples */
 	pivots->size = size - 1;
 	pivots->arr = calloc(pivots->size, sizeof(int));
-
+	partitions = calloc(size, sizeof(intArray *));
+	partitionsHead = calloc(1, sizeof(intArray));
+	finalList = calloc(1, sizeof(intArray));
+	
 	/* generate list of integers */
 	/* all procs need access to data->arr even it is is NULL */
 	data = calloc(1, sizeof(intArray));
@@ -57,23 +62,12 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 		data->size = args->nElem;
 		data->arr = gen_rand_list(data->size, args->seed);
 	}
-
-	partitions = calloc(size, sizeof(intArray *));
-	partitionsHead = calloc(1, sizeof(intArray));
-	finalList = calloc(1, sizeof(intArray));
 	
 	/* Phase 1: partition and sort local data */
 	MASTER { times->tPhase1S = MPI_Wtime(); }
-	phase_1(data, local, samples, interval);
+	phase_1(rank, data, local, samples, interval);
 	MASTER { times->tPhase1E = MPI_Wtime(); }
 
-#if DEBUG
-	printf("%d locals: ", rank);
-	for (i = 0; i < local->size; i++) {
-		printf("%d, ", local->arr[i]);
-	}
-	printf("\n");
-#endif
 
 	/* Phase 2: find pivots then partition */
 	MASTER { times->tPhase2S = MPI_Wtime(); }
@@ -164,7 +158,11 @@ void scatter(int *data, int *local, int count) {
  * Each processor sorts their portion of the items using quicksort.
  * Each processor takes regular samples of their sorted local data.
  */
-void phase_1(intArray *data, intArray *local, intArray *samples, int interval) {
+void phase_1(
+    int rank, intArray *data, intArray *local,
+    intArray *samples, int interval) {
+
+	int i = 0;
 	/* split data into p partitions and scatter to other pocesses */
 	scatter(data->arr, local->arr, local->size);
 
@@ -173,11 +171,17 @@ void phase_1(intArray *data, intArray *local, intArray *samples, int interval) {
 	qsort(local->arr, local->size, sizeof(int), &compare);
 
 	/* take samples */
-	int i;
 	for (i = 0; i < local->size; i += interval) {
 		samples->arr[i/interval] = local->arr[i];
 	}
 
+#if DEBUG
+	printf("%d locals: ", rank);
+	for (i = 0; i < local->size; i++) {
+		printf("%d, ", local->arr[i]);
+	}
+	printf("\n");
+#endif
 	return;
 }
 
