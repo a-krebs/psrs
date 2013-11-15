@@ -30,8 +30,10 @@ typedef struct {
 
 int run(struct timing*, struct arguments*, int, int);
 int *gen_rand_list(int, int);
-void scatter(int*, int*, int);
+void scatter_data(int*, int*, int);
 void phase_1(int, intArray*, intArray*, intArray*, int);
+void gather_samples(int, int, intArray*, intArray*);
+void broadcast_pivots(int, int, intArray*, intArray*);
 void phase_2(int, int , intArray*, intArray*, intArray*, intArray**, intArray*);
 void phase_3(int, int, intArray***, intArray**);
 void phase_4(int, int, intArray**, intArray*);

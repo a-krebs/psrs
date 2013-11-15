@@ -68,7 +68,6 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	phase_1(rank, data, local, samples, interval);
 	MASTER { times->tPhase1E = MPI_Wtime(); }
 
-
 	/* Phase 2: find pivots then partition */
 	MASTER { times->tPhase2S = MPI_Wtime(); }
 	phase_2(rank, size, samples, pivots, local, partitions, partitionsHead);
@@ -139,12 +138,12 @@ int *gen_rand_list(int nElem, int seed) {
  * Partition data into p parts and scatter parts to other processes
  * int the communicator.
  */
-void scatter(int *data, int *local, int count) {
+void scatter_data(int *data, int *local, int count) {
 	MPI_Scatter(
-	    (void*)data,
+	    data,
 	    count,
 	    MPI_INT,
-	    (void*)local,
+	    local,
 	    count,
 	    MPI_INT,
 	    0,
@@ -164,7 +163,7 @@ void phase_1(
 
 	int i = 0;
 	/* split data into p partitions and scatter to other pocesses */
-	scatter(data->arr, local->arr, local->size);
+	scatter_data(data->arr, local->arr, local->size);
 
 	/* sort local data */
 	// TODO make sure we're actually using quicksort
@@ -186,29 +185,16 @@ void phase_1(
 }
 
 /*
- * Phase 2
- *
- * MASTER processor gathers and sorts the regular samples.
- * p-1 pivots are selected from the regular samples at indeces
- *     p+k, 2p+k, 3p+k, ... , (p-1)+k
- *     where k = floor(p/2)
- * Each processor receives a copy of the pivots
- * Each processor makes p partitions from their local data
+ * Gather samples from all processors to MASTER
  */
-void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *local, intArray **partitions, intArray *partitionsHead) {
-	intArray *gatheredSamples = NULL;
-	/* loop variables */
+void gather_samples(
+    int rank, int size, intArray* gatheredSamples, intArray *samples) {
 	int i = 0;
-	int j = 0;
-	
-	/* implicit floor because these are integers */
-	int k = size / 2;
 
-	/* only MASTER needs to collect all samples */
-	gatheredSamples = calloc(1, sizeof(intArray));
 	MASTER {
 		gatheredSamples->size = size * size;
-		gatheredSamples->arr = calloc(gatheredSamples->size, sizeof(int));
+		gatheredSamples->arr = calloc(
+		    gatheredSamples->size, sizeof(int));
 	}
 	
 #if DEBUG
@@ -221,15 +207,29 @@ void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *
 
 	/* gather samples on MASTER */
 	MPI_Gather(
-	    (void*)(samples->arr),
+	    samples->arr,
 	    samples->size,
 	    MPI_INT,
-	    (void*)(gatheredSamples->arr),
+	    gatheredSamples->arr,
 	    /* recvcount is size sent from a single process */
 	    samples->size,
 	    MPI_INT,
 	    0,
 	    MPI_COMM_WORLD);
+
+	return;
+}
+
+/*
+ * Use gathered samples to select pivots
+ * and broadcase them to other processes
+ */
+void broadcast_pivots(
+    int rank, int size, intArray *gatheredSamples, intArray *pivots) {
+	int i = 0;
+	/* interval at which to select pivots
+	 * (implicit floor because these are integers) */
+	int k = size / 2;
 
 	MASTER {
 #if DEBUG
@@ -258,14 +258,9 @@ void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *
 #endif
 	}
 
-	/* done with gatheredSamples */
-
-	free(gatheredSamples->arr);
-	free(gatheredSamples);
-	
 	/* broadcast pivots */
 	MPI_Bcast(
-	    (void*)pivots->arr,
+	    pivots->arr,
 	    pivots->size,
 	    MPI_INT,
 	    0,
@@ -278,6 +273,36 @@ void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *
 	}
 	printf("\n");
 #endif
+
+	return;
+}
+
+/*
+ * Phase 2
+ *
+ * MASTER processor gathers and sorts the regular samples.
+ * p-1 pivots are selected from the regular samples at indeces
+ *     p+k, 2p+k, 3p+k, ... , (p-1)+k
+ *     where k = floor(p/2)
+ * Each processor receives a copy of the pivots
+ * Each processor makes p partitions from their local data
+ */
+void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *local, intArray **partitions, intArray *partitionsHead) {
+	/* loop variables */
+	int i = 0;
+	int j = 0;
+	intArray *gatheredSamples = NULL;
+
+	/* gather samples on MASTER */
+	gatheredSamples = calloc(1, sizeof(intArray));
+	gather_samples(rank, size, gatheredSamples, samples);
+
+	/* select and broadcase pivots */
+	broadcast_pivots(rank, size, gatheredSamples, pivots);
+
+	/* done with gatheredSamples */
+	free(gatheredSamples->arr);
+	free(gatheredSamples);
 
 	i = 0;
 	
