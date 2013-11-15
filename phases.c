@@ -265,7 +265,10 @@ void broadcast_pivots(
 /*
  * Partition local data based on pivots
  */
-void partition_data(int rank, int size, intArray *local, intArray *pivots, intArray **partitions, intArray *partitionsHead) {
+void partition_data(
+    int rank, int size, intArray *local, intArray *pivots,
+    intArray **partitions, intArray *partitionsHead) {
+
 	int i = 0;
 	int j = 0;
 	int pivot = 0;
@@ -351,7 +354,10 @@ void partition_data(int rank, int size, intArray *local, intArray *pivots, intAr
  * Each processor receives a copy of the pivots
  * Each processor makes p partitions from their local data
  */
-void phase_2(int rank, int size, intArray *samples, intArray *local, intArray **partitions, intArray *partitionsHead) {
+void phase_2(
+    int rank, int size, intArray *samples, intArray *local,
+    intArray **partitions, intArray *partitionsHead) {
+
 	/* loop variables */
 	intArray *gatheredSamples = NULL;
 	intArray *pivots = NULL;
