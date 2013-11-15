@@ -518,7 +518,6 @@ void phase_3(
 	newPartSizes->size = size;
 	newPartSizes->arr = calloc(newPartSizes->size, sizeof(int));
 
-
 	/* new partitions (from other processors) */
 	newPartitions = calloc(size, sizeof(intArray*));
 	newPartitionsHead = calloc(1, sizeof(intArray*));
