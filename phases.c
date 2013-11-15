@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>	/* printf() */
 #include <unistd.h>	/* sleep() */
+#include <string.h>	/* memset() */
 #include "mpi.h"
 
 #include "macros.h"
@@ -23,6 +24,7 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	intArray *samples = NULL;
 	intArray *pivots = NULL;
 	intArray **partitions = NULL;
+	intArray *allPartitions = NULL;
 
 	int localCount = args->nElem / size;
 	int interval = args->nElem / (size * size);
@@ -56,6 +58,7 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	}
 
 	partitions = calloc(size, sizeof(intArray *));
+	allPartitions = calloc(size, sizeof(intArray));
 	
 	/* Phase 1: partition and sort local data */
 	MASTER { times->tPhase1S = MPI_Wtime(); }
@@ -72,12 +75,12 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 
 	/* Phase 2: find pivots then partition */
 	MASTER { times->tPhase2S = MPI_Wtime(); }
-	phase_2(rank, size, samples, pivots, local, partitions);
+	phase_2(rank, size, samples, pivots, local, partitions, allPartitions);
 	MASTER { times->tPhase2E = MPI_Wtime(); }
 
 	/* Phase 3: exchange partitions */
 	MASTER { times->tPhase3S = MPI_Wtime(); }
-	phase_3(rank, size, partitions);
+	//phase_3(rank, size, partitions, allPartitions);
 	MASTER { times->tPhase3E = MPI_Wtime(); }
 	/* Phase 4: merge partitions */
 
@@ -97,8 +100,9 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	free(samples);
 	free(pivots->arr);
 	free(pivots);
+	free(allPartitions->arr);
+	free(allPartitions);
 	for (i = 0; i < size; i++) {
-		free(partitions[i]->arr);
 		free(partitions[i]);
 	}
 	free(partitions);
@@ -178,7 +182,7 @@ void phase_1(intArray *data, intArray *local, intArray *samples, int interval) {
  * Each processor receives a copy of the pivots
  * Each processor makes p partitions from their local data
  */
-void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *local, intArray **partitions) {
+void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *local, intArray **partitions, intArray *allPartitions) {
 	intArray *gatheredSamples = NULL;
 	/* loop variables */
 	int i = 0;
@@ -282,9 +286,13 @@ void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *
 		}
 
 		/* allocate for partition */
+		// TODO realloc breaks previous arr pointers
 		partitions[i] = calloc(1, sizeof(intArray));
 		partitions[i]->size = partitionSize;
-		partitions[i]->arr = calloc(partitions[i]->size, sizeof(int));
+		allPartitions->size += partitions[i]->size;
+		allPartitions->arr = realloc(allPartitions->arr, allPartitions->size * sizeof(int));
+		partitions[i]->arr = allPartitions->arr + allPartitions->size - partitions[i]->size;
+		memset(partitions[i]->arr, 0, partitions[i]->size * sizeof(int));
 
 		/* copy values to partition */
 		while (partitionSize > 0) {
@@ -307,7 +315,12 @@ void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *
 	/* using i from loop above */
 	partitions[i] = calloc(1, sizeof(intArray));
 	partitions[i]->size = local->size - index;
-	partitions[i]->arr = calloc(partitions[i]->size, sizeof(int));
+
+	allPartitions->size += partitions[i]->size;
+	allPartitions->arr = realloc(allPartitions->arr, allPartitions->size * sizeof(int));
+	partitions[i]->arr = allPartitions->arr + allPartitions->size - partitions[i]->size;
+	memset(partitions[i]->arr, 0, partitions[i]->size * sizeof(int));
+
 	for (j = index; j < local->size; j++) {
 		// add to final partition
 		partitions[i]->arr[j - index] = local->arr[j];
@@ -334,19 +347,33 @@ void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *
  * Each porcessor i keeps the ith partition and sends the jth partition to the
  * jth processor
  */
-void phase_3(int rank, int size, intArray **partitions) {
-	int i = 0;
+void phase_3(int rank, int size, intArray **partitions, intArray *allPartitions) {
+	int i,j = 0;
+	int totalPartSize = 0;
+	int *newPartitionsHead = NULL;
+	int *rdispls = NULL;
+	int *sdispls = NULL;
+	int offset = 0;
 	intArray *partSizes = NULL;
+	intArray *newPartSizes = NULL;
 	intArray **newPartitions = NULL;
 
 	/* buffer to exchange partition sizes */
 	partSizes = calloc(1, sizeof(intArray));
 	partSizes->size = size;
 	partSizes->arr = calloc(partSizes->size, sizeof(int));
+	newPartSizes = calloc(1, sizeof(intArray));
+	newPartSizes->size = size;
+	newPartSizes->arr = calloc(newPartSizes->size, sizeof(int));
+	sdispls = calloc(size, sizeof(int));
+	rdispls = calloc(size, sizeof(int));
 
 	/* set local sizes */
+	offset = 0;
 	for (i = 0; i < size; i++) {
 		partSizes->arr[i] = partitions[i]->size;
+		sdispls[i] = offset;
+		offset += partSizes->arr[i];
 	}
 
 #if DEBUG
@@ -359,38 +386,74 @@ void phase_3(int rank, int size, intArray **partitions) {
 
 	/* exchange partition sizes with all others */
 	MPI_Alltoall(
-	    MPI_IN_PLACE,
-	    0,
-	    MPI_DATATYPE_NULL,
 	    partSizes->arr,
+	    1,
+	    MPI_INT,
+	    newPartSizes->arr,
 	    1,
 	    MPI_INT,
 	    MPI_COMM_WORLD);
 
 #if DEBUG
 	printf("%d exchanged partition sizes: ", rank);
-	for (i = 0; i < partSizes->size; i++) {
-		printf("%d, ", partSizes->arr[i]);
+	for (i = 0; i < newPartSizes->size; i++) {
+		printf("%d, ", newPartSizes->arr[i]);
 	}
 	printf("\n");
 #endif
 
-	/* allocate memory for each parition */
-	newPartitions = calloc(size, sizeof(intArray*));
-	for (i = 0; i < partSizes->size; i++) {
-		newPartitions[i] = calloc(1, sizeof(intArray));
-		newPartitions[i]->size = partSizes->arr[i];
-		newPartitions[i]->arr = calloc(newPartitions[i]->size, sizeof(int));
+	/* calculate total memory needed */
+	for (i = 0; i < newPartSizes->size; i++) {
+		totalPartSize += newPartSizes->arr[i];
 	}
 
+	/* allocate memory for each parition */
+	newPartitions = calloc(size, sizeof(intArray*));
+	newPartitionsHead = calloc(totalPartSize, sizeof(int));
+	offset = 0;
+	for (i = 0; i < newPartSizes->size; i++) {
+		newPartitions[i] = calloc(1, sizeof(intArray));
+		newPartitions[i]->size = newPartSizes->arr[i];
+		newPartitions[i]->arr = newPartitionsHead + offset;
+		rdispls[i] = offset;
+		offset += newPartSizes->arr[i];
+	}
+
+#if DEBUG
+	for (i = 0; i < newPartSizes->size; i++) {
+		printf("%d expected partition size from %d: %d\n", rank, i, newPartitions[i]->size);
+	}
+#endif
+
 	/* exchange partitions */
-	MPI_Alltoall(
-	    partitions[rank]->arr,
-	    partitions[rank]->size,
+	MPI_Alltoallv(
+	    allPartitions->arr,
+	    partSizes->arr,
+	    sdispls,
 	    MPI_INT,
-	    newPartitions[rank]
+	    newPartitionsHead,
+	    newPartSizes->arr,
+	    rdispls,
+	    MPI_INT,
+	    MPI_COMM_WORLD);
+
+#if DEBUG
+	for (i = 0; i < size; i++) {
+		printf("%d exchanged parition from %d: ", rank, i);
+		for (j = 0; j < newPartitions[i]->size; j++) {
+			printf("%d, ", newPartitions[i]->arr[j]);
+		}
+		printf("\n");
+	}
+#endif
 
 	/* clean up */
+	free(newPartitionsHead);
+	free(sdispls);
+	free(rdispls);
+	for (i = 0; i < partSizes->size; i++) {
+		free(newPartitions[i]);
+	}
 	free(partSizes->arr);
 	free(partSizes);
 }
