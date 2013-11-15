@@ -29,6 +29,7 @@ typedef struct {
 } intArray;
 
 int run(struct timing*, struct arguments*, int, int);
+void print_intArray(int, intArray*, char*);
 int *gen_rand_list(int, int);
 void scatter_data(int*, int*, int);
 void phase_1(int, intArray*, intArray*, intArray*, int);

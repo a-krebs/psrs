@@ -113,6 +113,18 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 }
 
 /*
+ * Print an intArray with a message
+ */
+void print_intArray(int rank, intArray *ia, char *message) {
+	int i = 0;
+	printf("%d %s: ", rank, message);
+	for (i = 0; i < ia->size; i++) {
+		printf("%d, ", ia->arr[i]);
+	}
+	printf("\n");
+}
+
+/*
  * Generate list of appropriate size from random seed.
  *
  * Return a pointer to the list.
@@ -175,11 +187,7 @@ void phase_1(
 	}
 
 #if DEBUG
-	printf("%d locals: ", rank);
-	for (i = 0; i < local->size; i++) {
-		printf("%d, ", local->arr[i]);
-	}
-	printf("\n");
+	print_intArray(rank, local, "locals");
 #endif
 	return;
 }
@@ -198,11 +206,7 @@ void gather_samples(
 	}
 	
 #if DEBUG
-	printf("%d samples: ", rank);
-	for (i = 0; i < samples->size; i++) {
-		printf("%d, ", samples->arr[i]);
-	}
-	printf("\n");
+	print_intArray(rank, samples, "samples");
 #endif
 
 	/* gather samples on MASTER */
@@ -233,11 +237,7 @@ void broadcast_pivots(
 
 	MASTER {
 #if DEBUG
-		printf("%d gathered samples: ", rank);
-		for (i = 0; i < gatheredSamples->size; i++) {
-			printf("%d, ", gatheredSamples->arr[i]);
-		}
-		printf("\n");
+		print_intArray(rank, gatheredSamples, "gathered samples");
 #endif
 
 		/* sort samples */
@@ -250,11 +250,7 @@ void broadcast_pivots(
 		}
 
 #if DEBUG
-		printf("%d pivots before bcast: ", rank);
-		for (i = 0; i < pivots->size; i++) {
-			printf("%d, ", pivots->arr[i]);
-		}
-		printf("\n");
+		print_intArray(rank, pivots, "pivots before broadcast");
 #endif
 	}
 
@@ -267,11 +263,7 @@ void broadcast_pivots(
 	    MPI_COMM_WORLD);
 
 #if DEBUG
-	printf("%d pivots: ", rank);
-	for (i = 0; i < pivots->size; i++) {
-		printf("%d, ", pivots->arr[i]);
-	}
-	printf("\n");
+	print_intArray(rank, pivots, "pivots after broadcast");
 #endif
 
 	return;
@@ -427,11 +419,7 @@ void phase_3(int rank, int size, intArray ***partitionsPtr, intArray **partition
 	}
 
 #if DEBUG
-	printf("%d local partition sizes: ", rank);
-	for (i = 0; i < partSizes->size; i++) {
-		printf("%d, ", partSizes->arr[i]);
-	}
-	printf("\n");
+	print_intArray(rank, partSizes, "local partition sizes");
 #endif
 
 	/* exchange partition sizes with all others */
@@ -445,11 +433,7 @@ void phase_3(int rank, int size, intArray ***partitionsPtr, intArray **partition
 	    MPI_COMM_WORLD);
 
 #if DEBUG
-	printf("%d exchanged partition sizes: ", rank);
-	for (i = 0; i < newPartSizes->size; i++) {
-		printf("%d, ", newPartSizes->arr[i]);
-	}
-	printf("\n");
+	print_intArray(rank, newPartSizes, "exchanged partition sizes");
 #endif
 
 	/* calculate total memory needed */
@@ -569,11 +553,7 @@ void phase_4(int rank, int size, intArray **partitions, intArray *finalList) {
 	}
 
 #if DEBUG
-	printf("%d final list: ", rank);
-	for (i = 0; i < finalList->size; i++) {
-		printf("%d, ", finalList->arr[i]);
-	}
-	printf("\n");
+	print_intArray(rank, finalList, "final list");
 #endif
 	return;
 }
