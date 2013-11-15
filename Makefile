@@ -1,5 +1,5 @@
 OUT=		psrs
-OBJS=		main.o
+OBJS=		main.o args.o phases.o
 #TESTOBJS=	test.o $(SHAREDOBJS)
 
 CFLAGS+=	-Wall
@@ -7,8 +7,8 @@ CFLAGS+=	-Wall
 MPICC=		/home/aaron/bin/mpicc
 MPIEXEC=	/home/aaron/bin/mpiexec
 
-COMPILE=	$(MPICC) -c $< -o $@
-LINK=		$(MPICC) -o $@ $+
+COMPILE=	$(MPICC) $(CFLAGS) -c $< -o $@
+LINK=		$(MPICC) $(CFLAGS) -o $@ $+
 
 all: CFLAGS+= -O2
 all: $(OUT)
@@ -24,12 +24,18 @@ psrs: $(OBJS)
 main.o: main.c
 	$(COMPILE)
 
+args.o: args.c args.h
+	$(COMPILE)
+
+phases.o: phases.c phases.h
+	$(COMPILE)
+
 #test: $(TESTOBJS)
 #	$(CC) -o test $(TESTOBJS) 
 
 clean:
-	-rm -f *.o $(OUT)
+	-rm -f core *.o $(OUT)
 
 # useful utility rules
-run4: $(OUT)
-	$(MPIEXEC) -np 4 ./psrs
+run4: all
+	@$(MPIEXEC) -np 3 ./psrs -n 36

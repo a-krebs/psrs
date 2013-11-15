@@ -3,24 +3,69 @@
  * Aaron Krebs <akrebs@ualberta.ca>
  */
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>	/* For gethostname() */
 #include <string.h>	/* For memset() */
 #include "mpi.h"
 
+#include "macros.h"
+#include "args.h"
+#include "phases.h"
+
 int main(int argc, char **argv)
 {
-	int size, rank;
+	/* local variables */
+	int size = -1;
+	int rank = -1;
 	char hname[ 256 ];
+	struct arguments args;
+	/* locals for timing */
+	struct timing times;
 
-	MPI_Init( &argc, &argv );
-	MPI_Comm_size( MPI_COMM_WORLD, &size );
-	MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+	/* initialize MPI and get size and rank */
+	MPI_Init(&argc, &argv);
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-	memset( (void*)hname, 0, 256 );
-	gethostname( hname, 255 );
+	/* parse command line arguments */
+	memset((void*)&args, 0, sizeof(struct arguments));
+	if (parse_args(argc, argv, &args, size) != 0) {
+		MPI_Finalize();
+		exit(EXIT_FAILURE);
+	}
 
-	printf( "%d of %d running on %s\n", rank, size, hname );
+	/* zero out times */
+	memset((void*)&times, 0, sizeof(struct timing));
 
+	/* run PSRS */
+	if (run(&times, &args, rank, size) != 0) {
+		MPI_Finalize();
+		exit(EXIT_FAILURE);
+	}
+
+	/*
+	 * CSV output
+	 * rank, size, host, nElem, seed,
+	 * phase 1 time, phase 2 time, phase 3 time, phase 4 time,
+	 * phase 5 (sorted list concatenation phase) time, total time
+	 */
+	memset((void*)hname, 0, 256);
+	gethostname(hname, 255);
+	/*
+	MASTER {
+		printf("%d, %d, %s, %d, %d, %f, %f, %f, %f, %f, %f\n",
+		    rank, size, hname, args.nElem, args.seed,
+		    times.tPhase1E - times.tPhase1S,
+		    times.tPhase2E - times.tPhase2S,
+		    times.tPhase3E - times.tPhase3S,
+		    times.tPhase4E - times.tPhase4S,
+		    times.tPhase5E - times.tPhase5S,
+		    times.tEnd - times.tStart);
+	}
+	*/
+
+	/* clean up and exit */
 	MPI_Finalize();
+	exit(EXIT_SUCCESS);
 }
