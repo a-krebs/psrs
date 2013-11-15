@@ -235,11 +235,13 @@ void broadcast_pivots(
 
 		/* sort samples */
 		// TODO check sorting alg
-		qsort(gatheredSamples->arr, gatheredSamples->size, sizeof(int), &compare);
+		qsort(
+		    gatheredSamples->arr, gatheredSamples->size,
+		    sizeof(int), &compare);
 
 		/* select p-1 pivots */
 		for (i = 0; i < pivots->size; i++) {
-			pivots->arr[i] = gatheredSamples->arr[((i+1) * size) + k];
+			pivots->arr[i] = gatheredSamples->arr[((i+1)*size) + k];
 		}
 
 #if DEBUG
@@ -367,6 +369,8 @@ void phase_2(int rank, int size, intArray *samples, intArray *local, intArray **
 	}
 	printf("DONE PHASE 2\n");
 #endif
+	free(pivots->arr);
+	free(pivots);
 	return;
 }
 
