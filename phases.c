@@ -25,7 +25,6 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	/* local data, samples, pivots*/
 	intArray *local = NULL;
 	intArray *samples = NULL;
-	intArray *pivots = NULL;
 	/* partitions and final sorted list */
 	intArray **partitions = NULL;
 	intArray *partitionsHead = NULL;
@@ -47,10 +46,6 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	/* each processor takes p samples */
 	samples->size = size;
 	samples->arr = calloc(samples->size, sizeof(int));
-	pivots = calloc(1, sizeof(intArray));
-	/* select p-1 privots from samples */
-	pivots->size = size - 1;
-	pivots->arr = calloc(pivots->size, sizeof(int));
 	partitions = calloc(size, sizeof(intArray *));
 	partitionsHead = calloc(1, sizeof(intArray));
 	finalList = calloc(1, sizeof(intArray));
@@ -70,7 +65,7 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 
 	/* Phase 2: find pivots then partition */
 	MASTER { times->tPhase2S = MPI_Wtime(); }
-	phase_2(rank, size, samples, pivots, local, partitions, partitionsHead);
+	phase_2(rank, size, samples, local, partitions, partitionsHead);
 	MASTER { times->tPhase2E = MPI_Wtime(); }
 
 	/* Phase 3: exchange partitions */
@@ -100,8 +95,6 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	free(local);
 	free(samples->arr);
 	free(samples);
-	free(pivots->arr);
-	free(pivots);
 	free(partitionsHead->arr);
 	free(partitionsHead);
 	for (i = 0; i < size; i++) {
@@ -279,11 +272,17 @@ void broadcast_pivots(
  * Each processor receives a copy of the pivots
  * Each processor makes p partitions from their local data
  */
-void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *local, intArray **partitions, intArray *partitionsHead) {
+void phase_2(int rank, int size, intArray *samples, intArray *local, intArray **partitions, intArray *partitionsHead) {
 	/* loop variables */
 	int i = 0;
 	int j = 0;
 	intArray *gatheredSamples = NULL;
+	intArray *pivots = NULL;
+
+	pivots = calloc(1, sizeof(intArray));
+	/* select p-1 privots from samples */
+	pivots->size = size - 1;
+	pivots->arr = calloc(pivots->size, sizeof(int));
 
 	/* gather samples on MASTER */
 	gatheredSamples = calloc(1, sizeof(intArray));
