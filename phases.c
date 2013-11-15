@@ -24,7 +24,8 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	intArray *samples = NULL;
 	intArray *pivots = NULL;
 	intArray **partitions = NULL;
-	intArray *allPartitions = NULL;
+	intArray *partitionsHead = NULL;
+	intArray *finalList = NULL;
 
 	int localCount = args->nElem / size;
 	int interval = args->nElem / (size * size);
@@ -58,7 +59,8 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	}
 
 	partitions = calloc(size, sizeof(intArray *));
-	allPartitions = calloc(size, sizeof(intArray));
+	partitionsHead = calloc(1, sizeof(intArray));
+	finalList = calloc(1, sizeof(intArray));
 	
 	/* Phase 1: partition and sort local data */
 	MASTER { times->tPhase1S = MPI_Wtime(); }
@@ -75,16 +77,23 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 
 	/* Phase 2: find pivots then partition */
 	MASTER { times->tPhase2S = MPI_Wtime(); }
-	phase_2(rank, size, samples, pivots, local, partitions, allPartitions);
+	phase_2(rank, size, samples, pivots, local, partitions, partitionsHead);
 	MASTER { times->tPhase2E = MPI_Wtime(); }
 
 	/* Phase 3: exchange partitions */
 	MASTER { times->tPhase3S = MPI_Wtime(); }
-	//phase_3(rank, size, partitions, allPartitions);
+	phase_3(rank, size, &partitions, &partitionsHead);
 	MASTER { times->tPhase3E = MPI_Wtime(); }
+	
 	/* Phase 4: merge partitions */
+	MASTER { times->tPhase4S = MPI_Wtime(); }
+	phase_4(rank, size, partitions, finalList);
+	MASTER { times->tPhase4E = MPI_Wtime(); }
+
 
 	/* gather data */
+
+
 	/* concatenate lists */
 
 	/* end timer */
@@ -100,8 +109,8 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	free(samples);
 	free(pivots->arr);
 	free(pivots);
-	free(allPartitions->arr);
-	free(allPartitions);
+	free(partitionsHead->arr);
+	free(partitionsHead);
 	for (i = 0; i < size; i++) {
 		free(partitions[i]);
 	}
@@ -182,12 +191,11 @@ void phase_1(intArray *data, intArray *local, intArray *samples, int interval) {
  * Each processor receives a copy of the pivots
  * Each processor makes p partitions from their local data
  */
-void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *local, intArray **partitions, intArray *allPartitions) {
+void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *local, intArray **partitions, intArray *partitionsHead) {
 	intArray *gatheredSamples = NULL;
 	/* loop variables */
 	int i = 0;
 	int j = 0;
-	int m = 0;
 	
 	/* implicit floor because these are integers */
 	int k = size / 2;
@@ -289,9 +297,9 @@ void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *
 		// TODO realloc breaks previous arr pointers
 		partitions[i] = calloc(1, sizeof(intArray));
 		partitions[i]->size = partitionSize;
-		allPartitions->size += partitions[i]->size;
-		allPartitions->arr = realloc(allPartitions->arr, allPartitions->size * sizeof(int));
-		partitions[i]->arr = allPartitions->arr + allPartitions->size - partitions[i]->size;
+		partitionsHead->size += partitions[i]->size;
+		partitionsHead->arr = realloc(partitionsHead->arr, partitionsHead->size * sizeof(int));
+		partitions[i]->arr = partitionsHead->arr + partitionsHead->size - partitions[i]->size;
 		memset(partitions[i]->arr, 0, partitions[i]->size * sizeof(int));
 
 		/* copy values to partition */
@@ -302,6 +310,7 @@ void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *
 
 		index = j;
 		/* skip pivots */
+		// TODO we don't want to skip duplicates here
 		while (local->arr[index] == pivot) {
 			index++;
 		}
@@ -316,9 +325,9 @@ void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *
 	partitions[i] = calloc(1, sizeof(intArray));
 	partitions[i]->size = local->size - index;
 
-	allPartitions->size += partitions[i]->size;
-	allPartitions->arr = realloc(allPartitions->arr, allPartitions->size * sizeof(int));
-	partitions[i]->arr = allPartitions->arr + allPartitions->size - partitions[i]->size;
+	partitionsHead->size += partitions[i]->size;
+	partitionsHead->arr = realloc(partitionsHead->arr, partitionsHead->size * sizeof(int));
+	partitions[i]->arr = partitionsHead->arr + partitionsHead->size - partitions[i]->size;
 	memset(partitions[i]->arr, 0, partitions[i]->size * sizeof(int));
 
 	for (j = index; j < local->size; j++) {
@@ -347,16 +356,22 @@ void phase_2(int rank, int size, intArray *samples, intArray *pivots, intArray *
  * Each porcessor i keeps the ith partition and sends the jth partition to the
  * jth processor
  */
-void phase_3(int rank, int size, intArray **partitions, intArray *allPartitions) {
+void phase_3(int rank, int size, intArray ***partitionsPtr, intArray **partitionsHeadPtr) {
 	int i,j = 0;
 	int totalPartSize = 0;
-	int *newPartitionsHead = NULL;
 	int *rdispls = NULL;
 	int *sdispls = NULL;
 	int offset = 0;
+	intArray **partitions = NULL;
+	intArray *partitionsHead = NULL;
+
 	intArray *partSizes = NULL;
 	intArray *newPartSizes = NULL;
 	intArray **newPartitions = NULL;
+	intArray *newPartitionsHead = NULL;
+
+	partitions = *partitionsPtr;
+	partitionsHead = *partitionsHeadPtr;
 
 	/* buffer to exchange partition sizes */
 	partSizes = calloc(1, sizeof(intArray));
@@ -365,8 +380,14 @@ void phase_3(int rank, int size, intArray **partitions, intArray *allPartitions)
 	newPartSizes = calloc(1, sizeof(intArray));
 	newPartSizes->size = size;
 	newPartSizes->arr = calloc(newPartSizes->size, sizeof(int));
+
+	/* buffers for MPI_Alltoallv call */
 	sdispls = calloc(size, sizeof(int));
 	rdispls = calloc(size, sizeof(int));
+
+	/* new partitions (from other processors) */
+	newPartitions = calloc(size, sizeof(intArray*));
+	newPartitionsHead = calloc(1, sizeof(intArray*));
 
 	/* set local sizes */
 	offset = 0;
@@ -408,13 +429,12 @@ void phase_3(int rank, int size, intArray **partitions, intArray *allPartitions)
 	}
 
 	/* allocate memory for each parition */
-	newPartitions = calloc(size, sizeof(intArray*));
-	newPartitionsHead = calloc(totalPartSize, sizeof(int));
+	newPartitionsHead->arr = calloc(totalPartSize, sizeof(int));
 	offset = 0;
 	for (i = 0; i < newPartSizes->size; i++) {
 		newPartitions[i] = calloc(1, sizeof(intArray));
 		newPartitions[i]->size = newPartSizes->arr[i];
-		newPartitions[i]->arr = newPartitionsHead + offset;
+		newPartitions[i]->arr = newPartitionsHead->arr + offset;
 		rdispls[i] = offset;
 		offset += newPartSizes->arr[i];
 	}
@@ -427,11 +447,11 @@ void phase_3(int rank, int size, intArray **partitions, intArray *allPartitions)
 
 	/* exchange partitions */
 	MPI_Alltoallv(
-	    allPartitions->arr,
+	    partitionsHead->arr,
 	    partSizes->arr,
 	    sdispls,
 	    MPI_INT,
-	    newPartitionsHead,
+	    newPartitionsHead->arr,
 	    newPartSizes->arr,
 	    rdispls,
 	    MPI_INT,
@@ -447,15 +467,86 @@ void phase_3(int rank, int size, intArray **partitions, intArray *allPartitions)
 	}
 #endif
 
+	/* swap old local paritions with new ones */
+	free(partitionsHead->arr);
+	free(partitionsHead);
+	for (i = 0; i < size; i++) {
+		free(partitions[i]);
+	}
+	free(partitions);
+	*(partitionsHeadPtr) = newPartitionsHead;
+	*(partitionsPtr) = newPartitions;
+
 	/* clean up */
-	free(newPartitionsHead);
 	free(sdispls);
 	free(rdispls);
-	for (i = 0; i < partSizes->size; i++) {
-		free(newPartitions[i]);
-	}
 	free(partSizes->arr);
 	free(partSizes);
+	free(newPartSizes->arr);
+	free(newPartSizes);
+}
+
+/*
+ * Merge the local partitions
+ */
+void phase_4(int rank, int size, intArray **partitions, intArray *finalList) {
+
+	int i = 0;
+	int j = 0;
+	int partWithMin = 0;
+	int minVal = 0;
+	int *indices = NULL;
+	int finalBuzzSize = 0;
+	/* do a k-way merge of already sorted lists */
+
+#if DEBUG
+	for (i = 0; i < size; i++) {
+		printf("%d P4 parition from %d: ", rank, i);
+		for (j = 0; j < partitions[i]->size; j++) {
+			printf("%d, ", partitions[i]->arr[j]);
+		}
+		printf("\n");
+	}
+#endif
+	for (i = 0; i < size; i++) {
+		finalList->size += partitions[i]->size;
+	}
+
+	finalList->arr = calloc(finalList->size, sizeof(int));
+
+	indices = calloc(size, sizeof(int));
+
+	for (i = 0; i < finalList->size; i++) {
+		for (j = 0; j < size; j++) {
+			if (indices[j] < partitions[j]->size) {
+				partWithMin = j;
+				minVal = partitions[j]->arr[indices[j]];
+			}
+		}
+
+		for (j = 0; j < size; j++) {
+			if (indices[j] >= partitions[j]->size) {
+				continue;
+			}
+
+			if (partitions[j]->arr[indices[j]] < minVal) {
+				minVal = partitions[j]->arr[indices[j]];
+				partWithMin = j;
+			}
+		}
+
+		finalList->arr[i] = minVal;
+		indices[partWithMin]++;
+	}
+
+#if DEBUG
+	printf("%d final list: ", rank);
+	for (i = 0; i < finalList->size; i++) {
+		printf("%d, ", finalList->arr[i]);
+	}
+	printf("\n");
+#endif
+	return;
 }
 
 int compare(const void *x, const void *y) {
