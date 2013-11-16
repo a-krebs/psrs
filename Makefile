@@ -13,7 +13,7 @@ LINK=		$(MPICC) $(CFLAGS) -o $@ $+
 all: CFLAGS+= -O2
 all: $(OUT)
 
-debug: CFLAGS+= -g -DDEBUG
+debug: CFLAGS+= -g -DDEBUG -DGATHERFINAL
 debug: $(OUT)
 
 #test: CFLAGS+= -g -DTEST

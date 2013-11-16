@@ -35,10 +35,13 @@ void scatter_data(int*, int*, int);
 void phase_1(int, intArray*, intArray*, intArray*, int);
 void gather_samples(int, int, intArray*, intArray*);
 void broadcast_pivots(int, int, intArray*, intArray*);
+void reset_arr_pointers(intArray*, intArray**, int);
+void partition_data(int, int, intArray*, intArray*, intArray**, intArray*);
+void phase_2(int, int , intArray*, intArray*, intArray*, intArray**, intArray*);
 void exchange_partition_sizes(int, intArray*, intArray*);
 void exchange_partitions(int, int, intArray*, intArray*,
     intArray**, intArray*, intArray**, intArray*);
-void phase_2(int, int , intArray*, intArray*, intArray**, intArray*);
 void phase_3(int, int, intArray***, intArray**);
 void phase_4(int, int, intArray**, intArray*);
+void phase_5(int, int, int, intArray*, intArray*);
 int compare(const void*, const void*);
