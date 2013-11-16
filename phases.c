@@ -26,6 +26,14 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	intArray *local = NULL;
 	intArray *samples = NULL;
 	/* partitions and final sorted list */
+	/* 
+	 * partitions are in a contguous memory area so that the entire memory
+	 * area can be passed into MPI_Alltoallv. The individual partition
+	 * structs in the **partitions array each have their arr pointer point
+	 * to a space within partitionsHead->arr. Free only the
+	 * partitionsHead-arr when done (and each of the partitions[i] structs,
+	 * but NOT partitions[i]>arr).
+	 */
 	intArray **partitions = NULL;
 	intArray *partitionsHead = NULL;
 	intArray *finalList = NULL;
@@ -131,9 +139,11 @@ int *gen_rand_list(int nElem, int seed) {
 	srandom(seed);
 
 	int i;
-	for (i = 0; i < nElem; i++) {
+	int flag = 0;
+	for (i = 0; i < nElem - 1; i += 2) {
 		//elem[i] = random();
 		elem[i] = i;
+		elem[i+1] = i;
 	}
 
 	return elem;
@@ -263,6 +273,25 @@ void broadcast_pivots(
 }
 
 /*
+ * Re-assign the arr pointers for the first numP partitions in partitions array.
+ */
+void reset_arr_pointers(
+    intArray *partitionsHead, intArray **partitions, int numP) {
+
+	int i = 0;
+	int *currArr = partitionsHead->arr;
+
+	for (i = 0; i < numP; i++) {
+		partitions[i]->arr = currArr;
+		currArr += partitions[i]->size;
+	}
+
+	return;
+}
+
+
+
+/*
  * Partition local data based on pivots
  */
 void partition_data(
@@ -288,12 +317,12 @@ void partition_data(
 		}
 
 		/* allocate for partition */
-		// TODO realloc breaks previous arr pointers
 		partitions[i] = calloc(1, sizeof(intArray));
 		partitions[i]->size = partitionSize;
 		partitionsHead->size += partitions[i]->size;
 		partitionsHead->arr = realloc(partitionsHead->arr, partitionsHead->size * sizeof(int));
-		partitions[i]->arr = partitionsHead->arr + partitionsHead->size - partitions[i]->size;
+		reset_arr_pointers(partitionsHead, partitions, i + 1);
+//		partitions[i]->arr = partitionsHead->arr + partitionsHead->size - partitions[i]->size;
 		memset(partitions[i]->arr, 0, partitions[i]->size * sizeof(int));
 
 		/* copy values to partition */
