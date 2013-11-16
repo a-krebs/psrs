@@ -25,6 +25,7 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	/* local data, samples, pivots*/
 	intArray *local = NULL;
 	intArray *samples = NULL;
+	intArray *pivots = NULL;
 	/* partitions and final sorted list */
 	/* 
 	 * partitions are in a contguous memory area so that the entire memory
@@ -54,6 +55,10 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	/* each processor takes p samples */
 	samples->size = size;
 	samples->arr = calloc(samples->size, sizeof(int));
+	pivots = calloc(1, sizeof(intArray));
+	/* select p-1 privots from samples */
+	pivots->size = size - 1;
+	pivots->arr = calloc(pivots->size, sizeof(int));
 	partitions = calloc(size, sizeof(intArray *));
 	partitionsHead = calloc(1, sizeof(intArray));
 	finalList = calloc(1, sizeof(intArray));
@@ -73,7 +78,7 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 
 	/* Phase 2: find pivots then partition */
 	MASTER { times->tPhase2S = MPI_Wtime(); }
-	phase_2(rank, size, samples, local, partitions, partitionsHead);
+	phase_2(rank, size, samples, local, pivots, partitions, partitionsHead);
 	MASTER { times->tPhase2E = MPI_Wtime(); }
 
 	/* Phase 3: exchange partitions */
@@ -86,11 +91,12 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	phase_4(rank, size, partitions, finalList);
 	MASTER { times->tPhase4E = MPI_Wtime(); }
 
-
-	/* gather data */
-
-
-	/* concatenate lists */
+#if GATHERFINAL
+	/* gather data and print for verification */
+	MASTER { times->tPhase5S = MPI_Wtime(); }
+	phase_5(rank, size, args->nElem, finalList, pivots);
+	MASTER { times->tPhase5E = MPI_Wtime(); }
+#endif
 
 	/* end timer */
 	MASTER {
@@ -103,12 +109,16 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	free(local);
 	free(samples->arr);
 	free(samples);
+	free(pivots->arr);
+	free(pivots);
 	free(partitionsHead->arr);
 	free(partitionsHead);
 	for (i = 0; i < size; i++) {
 		free(partitions[i]);
 	}
 	free(partitions);
+	free(finalList->arr);
+	free(finalList);
 
 	return 0;
 }
@@ -300,18 +310,31 @@ void partition_data(
 
 	int i = 0;
 	int j = 0;
+	int k = 0;
 	int pivot = 0;
 	int index = 0;
 	int partitionSize = 0;
+	int repeatedPivot = 0;
 
 	/* there are size-1 pivots for size number of partitions */
 	for (i = 0; i < pivots->size; i++) {
 		pivot = pivots->arr[i];
+		repeatedPivot = 0;
 
 		for (j = index; j < local->size; j++) {
 			if (local->arr[j] < pivot) {
 				partitionSize++;
 			} else {
+				/* include pivot if it repeats*/
+				for (k = j + 1; k < local->size; k++) {
+					if (local->arr[k] == pivot) {
+						repeatedPivot++;
+					} else {
+						break;
+					}
+				}
+				partitionSize += repeatedPivot;
+				j += repeatedPivot;
 				break;
 			}
 		}
@@ -330,10 +353,10 @@ void partition_data(
 			partitionSize--;
 		}
 
+		/* set start index for next partition */
 		index = j;
-		/* skip pivots */
-		// TODO we don't want to skip duplicates here
-		while (local->arr[index] == pivot) {
+		// skip pivot
+		if (local->arr[index] == pivot) {
 			index++;
 		}
 	}
@@ -383,17 +406,11 @@ void partition_data(
  * Each processor makes p partitions from their local data
  */
 void phase_2(
-    int rank, int size, intArray *samples, intArray *local,
+    int rank, int size, intArray *samples, intArray *local, intArray *pivots,
     intArray **partitions, intArray *partitionsHead) {
 
 	/* loop variables */
 	intArray *gatheredSamples = NULL;
-	intArray *pivots = NULL;
-
-	pivots = calloc(1, sizeof(intArray));
-	/* select p-1 privots from samples */
-	pivots->size = size - 1;
-	pivots->arr = calloc(pivots->size, sizeof(int));
 
 	/* gather samples on MASTER */
 	gatheredSamples = calloc(1, sizeof(intArray));
@@ -409,8 +426,6 @@ void phase_2(
 	/* partition local data based on pivots */
 	partition_data(rank, size, local, pivots, partitions, partitionsHead);
 	
-	free(pivots->arr);
-	free(pivots);
 	return;
 }
 
@@ -637,6 +652,87 @@ void phase_4(int rank, int size, intArray **partitions, intArray *finalList) {
 #if DEBUG
 	print_intArray(rank, finalList, "final list");
 #endif
+	return;
+}
+
+/*
+ * Phase 5 (not actually a phase in PSRS)
+ *
+ * Gather final lists from all processes
+ * Concatenate final lists and pivots
+ */
+void phase_5(
+    int rank, int size, int nElem, intArray *finalList, intArray *pivots) {
+
+	int i = 0;
+	int offset = 0;
+	intArray *concatList = NULL;
+	int sizes[size];
+	int displs[size];
+	
+	memset(sizes, 0, size * sizeof(int));
+	memset(displs, 0, size * sizeof(int));
+
+	/* exchange finalList sizes with all processors */
+	/* gather sizes at MASTER */
+	MPI_Gather(
+	    &(finalList->size),
+	    1,
+	    MPI_INT,
+	    sizes,
+	    1,
+	    MPI_INT,
+	    0,
+	    MPI_COMM_WORLD);
+
+	/* figure out displs for recieve */
+	MASTER {
+		offset = 0;
+		for (i = 0; i < size; i++) {
+			displs[i] = offset;
+			/* +1 to add spaces between lists for pivots */
+			offset += sizes[i] + 1;
+		}
+	}
+
+	concatList = calloc(1, sizeof(intArray));
+	/* all procs need concatList, but only master needs the arr memory */
+	MASTER {
+		concatList->size = nElem;
+		concatList->arr = calloc(concatList->size, sizeof(int));
+	}
+	/* gather final lists on MASTER */
+	MPI_Gatherv(
+	    finalList->arr,
+	    finalList->size,
+	    MPI_INT,
+	    concatList->arr,
+	    sizes,
+	    displs,
+	    MPI_INT,
+	    0,
+	    MPI_COMM_WORLD);
+
+	MASTER {
+		/* insert pivots into concatList */
+		offset = 0;
+		for (i = 0; i < pivots->size; i++) {
+			offset += sizes[i];
+			concatList->arr[offset] = pivots->arr[i];
+			offset++;
+		}
+
+		/* print concatedated list for verification */
+		for (i = 0; i < concatList->size; i++) {
+			printf("%d, ", concatList->arr[i]);
+		}
+		printf("\n");
+
+		free(concatList->arr);
+	}
+
+	free(concatList);
+
 	return;
 }
 
