@@ -322,7 +322,6 @@ void partition_data(
 		partitionsHead->size += partitions[i]->size;
 		partitionsHead->arr = realloc(partitionsHead->arr, partitionsHead->size * sizeof(int));
 		reset_arr_pointers(partitionsHead, partitions, i + 1);
-//		partitions[i]->arr = partitionsHead->arr + partitionsHead->size - partitions[i]->size;
 		memset(partitions[i]->arr, 0, partitions[i]->size * sizeof(int));
 
 		/* copy values to partition */
