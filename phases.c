@@ -41,6 +41,9 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 
 	/* what is the interval at which to take samples? */
 	int interval = args->nElem / (size * size);
+	if (interval == 0) {
+		interval = 1;
+	}
 
 	/* start timer */
 	MASTER {
@@ -102,7 +105,7 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	MASTER {
 		times->tEnd = MPI_Wtime();
 	}
-	
+
 	free(data->arr);
 	free(data);
 	free(local->arr);
@@ -119,6 +122,10 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 	free(partitions);
 	free(finalList->arr);
 	free(finalList);
+
+#if DEBUG
+	printf("%d RUN DONE\n", rank);
+#endif
 
 	return 0;
 }
@@ -564,7 +571,7 @@ void phase_3(
 
 	/* new partitions (from other processors) */
 	newPartitions = calloc(size, sizeof(intArray*));
-	newPartitionsHead = calloc(1, sizeof(intArray*));
+	newPartitionsHead = calloc(1, sizeof(intArray));
 
 	/* set local sizes */
 	for (i = 0; i < size; i++) {
@@ -652,6 +659,7 @@ void phase_4(int rank, int size, intArray **partitions, intArray *finalList) {
 
 #if DEBUG
 	print_intArray(rank, finalList, "final list");
+	printf("%d PHASE 4 DONE\n", rank);
 #endif
 	return;
 }
@@ -723,6 +731,9 @@ void phase_5(
 			offset++;
 		}
 
+#if DEBUG
+		printf("%d PHASE 5 pivot insert complete\n", rank);
+#endif
 		/* print concatedated list for verification */
 		for (i = 0; i < concatList->size; i++) {
 			printf("%d, ", concatList->arr[i]);
@@ -733,6 +744,10 @@ void phase_5(
 	}
 
 	free(concatList);
+
+#if DEBUG
+	printf("%d PHASE 5 DONE\n", rank);
+#endif
 
 	return;
 }

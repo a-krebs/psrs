@@ -66,6 +66,9 @@ int main(int argc, char **argv)
 	*/
 
 	/* clean up and exit */
+#if DEBUG
+	printf("%d EXIT_SUCCESS\n", rank);
+#endif
 	MPI_Finalize();
 	exit(EXIT_SUCCESS);
 }
