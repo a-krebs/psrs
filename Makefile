@@ -16,6 +16,9 @@ all: $(OUT)
 debug: CFLAGS+= -g -DDEBUG -DGATHERFINAL
 debug: $(OUT)
 
+verify: CFLAGS+= -O2 -DGATHERFINAL
+verify: $(OUT)
+
 #test: CFLAGS+= -g -DTEST
 
 psrs: $(OBJS)

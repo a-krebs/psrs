@@ -149,7 +149,6 @@ int *gen_rand_list(int nElem, int seed) {
 	srandom(seed);
 
 	int i;
-	int flag = 0;
 	for (i = 0; i < nElem - 1; i += 2) {
 		//elem[i] = random();
 		elem[i] = i;
@@ -464,7 +463,9 @@ void exchange_partitions(
     intArray **newPartitions, intArray *newPartitionsHead) {
 
 	int i = 0;
+#if DEBUG
 	int j = 0;
+#endif
 	int offset = 0;
 	int totalPartSize = 0;
 	int *rdispls = NULL;
