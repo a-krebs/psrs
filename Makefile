@@ -51,9 +51,14 @@ experiments.sh: generate_tests.py
 
 clean:
 	-rm -f core *.o $(OUT)
+	-rm -f output*.txt
+	-rm -f experiments.sh
 
 # useful utility rules
 run6: all
 	@$(MPIEXEC) -np 6 ./psrs -n 42
 
 run_prep: clean all experiments.sh
+
+concat_output:
+	find . -name "output*.txt" | xargs -I {} cat {} >> results.txt

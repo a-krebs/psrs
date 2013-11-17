@@ -1,6 +1,3 @@
-# generated files
-experiments.sh
-
 # Object files
 *.o
 *.ko
