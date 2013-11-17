@@ -96,9 +96,7 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 
 #if GATHERFINAL
 	/* gather data and print for verification */
-	MASTER { times->tPhase5S = MPI_Wtime(); }
 	phase_5(rank, size, args->nElem, finalList, pivots);
-	MASTER { times->tPhase5E = MPI_Wtime(); }
 #endif
 
 	/* end timer */
@@ -150,16 +148,14 @@ void print_intArray(int rank, intArray *ia, char *message) {
  */
 int *gen_rand_list(int nElem, int seed) {
 	int *elem = NULL;
+	int i = 0;
 	elem = malloc(nElem * sizeof(int));
 
 	/* seed random number genrator */
 	srandom(seed);
 
-	int i;
-	for (i = 0; i < nElem - 1; i += 2) {
-		//elem[i] = random();
-		elem[i] = i;
-		elem[i+1] = i;
+	for (i = 0; i < nElem; i++) {
+		elem[i] = (int)random();
 	}
 
 	return elem;

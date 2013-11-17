@@ -44,26 +44,25 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
+	memset((void*)hname, 0, 256);
+	gethostname(hname, 255);
+#if !GATHERFINAL
 	/*
 	 * CSV output
 	 * rank, size, host, nElem, seed,
 	 * phase 1 time, phase 2 time, phase 3 time, phase 4 time,
 	 * phase 5 (sorted list concatenation phase) time, total time
 	 */
-	memset((void*)hname, 0, 256);
-	gethostname(hname, 255);
-	/*
 	MASTER {
-		printf("%d, %d, %s, %d, %d, %f, %f, %f, %f, %f, %f\n",
+		printf("psrs,%d,%d,%s,%d,%d,%f,%f,%f,%f,%f\n",
 		    rank, size, hname, args.nElem, args.seed,
 		    times.tPhase1E - times.tPhase1S,
 		    times.tPhase2E - times.tPhase2S,
 		    times.tPhase3E - times.tPhase3S,
 		    times.tPhase4E - times.tPhase4S,
-		    times.tPhase5E - times.tPhase5S,
 		    times.tEnd - times.tStart);
 	}
-	*/
+#endif
 
 	/* clean up and exit */
 #if DEBUG

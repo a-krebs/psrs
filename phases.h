@@ -17,9 +17,6 @@ struct timing {
 	double tPhase3E;	/* end of phase 3 */
 	double tPhase4S;	/* start of phase 4 */
 	double tPhase4E;	/* end of phase 4 */
-	/* "phase" 5 is the sorted-list-concatenation phase */
-	double tPhase5S;	/* start of phase 5 */
-	double tPhase5E;	/* end of phase 5 */
 	double tEnd;
 };
 
