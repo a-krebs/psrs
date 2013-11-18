@@ -3,8 +3,8 @@
 
 
 def generate_tests():
-    test_sizes = [2000000,6000000]
-    process_pool_sizes = [1,2,4,8,16,32,64]
+    test_sizes = [1000000,5000000,10000000,50000000]
+    process_pool_sizes = [1,2,4,8,16]
     repeats = 7
     lineCount = 2 # skip shell header line
 
