@@ -21,7 +21,7 @@ def generate_tests():
     for i in test_sizes:
         for np in process_pool_sizes:
             for r in xrange(0, repeats):
-                print "mpiexec -np {np} ./{exe} -n {n} >> output{lineCount}.txt"\
+                print "mpiexec -np {np} -mca tcp_if_include eth0 -hostsfile hosts ./{exe} -n {n} >> output{lineCount}.txt"\
                     .format(np=np, exe='psrs', n=i, lineCount=lineCount)
                 lineCount += 1
 
