@@ -73,6 +73,9 @@ int run(struct timing *times, struct arguments *args, int rank, int size) {
 		data->size = args->nElem;
 		data->arr = gen_rand_list(data->size, args->seed);
 	}
+
+	/* split data into p partitions and scatter to other pocesses */
+	scatter_data(data->arr, local->arr, local->size);
 	
 	/* Phase 1: partition and sort local data */
 	MASTER { times->tPhase1S = MPI_Wtime(); }
@@ -189,8 +192,6 @@ void phase_1(
     intArray *samples, int interval) {
 
 	int i = 0;
-	/* split data into p partitions and scatter to other pocesses */
-	scatter_data(data->arr, local->arr, local->size);
 
 	/* sort local data */
 	// TODO make sure we're actually using quicksort
